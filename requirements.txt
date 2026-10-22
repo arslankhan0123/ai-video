@@ -1,8 +1,15 @@
 # Core
-google-genai>=0.3.0        # Veo 3 video generation
-moviepy>=2.1,<3            # final assembly (needs ffmpeg installed separately)
+google-genai>=0.3.0        # Veo 3 video + Gemini image/text
 python-dotenv>=1.0         # loads your .env
 
-# Voiceover — at least one of these:
+# Voiceover (for the narrated main.py short) — at least one:
 edge-tts>=6.1             # free narrator TTS, no API key
 elevenlabs>=1.0           # optional higher-quality narration (needs API key)
+
+# Final assembly for main.py (talk.py uses ffmpeg directly, no moviepy needed)
+moviepy>=2.1,<3           # needs ffmpeg installed separately
+
+# YouTube upload (talk.py --upload)
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+google-auth-httplib2>=0.2

@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-60-second Urdu talking-character short.
+60-second Urdu FUNNY talking-toddler short — 8 varied scenes, auto title,
+optional YouTube upload.
 
-Veo 3.1 makes 8s clips, so this generates 8 talking segments (each with one
-Urdu line, spoken + lip-synced by Veo) and stitches them into one ~60s video.
+Veo 3.1 makes 8s clips, so this generates 8 talking segments (each a different
+place + funny Urdu line) and stitches them into one ~60s video. The output file
+is named after an auto-generated title based on the video's content.
 
 Examples:
-    python talk.py --dry-run                 # print prompts, spend nothing
-    python talk.py --only-segment 1          # render just segment 1 (cheap test)
-    python talk.py                           # full 60s build
-    python talk.py --skip-video --music "music/bed.mp3"   # re-stitch only
+    python talk.py --dry-run                   # print prompts, spend nothing
+    python talk.py --only-segment 2            # render one clip (cheap test)
+    python talk.py                             # full build -> output/<title>.mp4
+    python talk.py --upload                    # build, then upload (private)
+    python talk.py --upload --privacy public   # build, then upload public
+    python talk.py --skip-video --upload       # re-stitch existing clips + upload
 """
 
 import argparse
 import os
+import re
 import sys
 
 try:
@@ -23,12 +28,20 @@ except Exception:
     pass
 
 from generator import talking_config as tcfg
-from generator import veo_client, ffmerge, imagegen
+from generator import veo_client, ffmerge, imagegen, titlegen
+
+
+def safe_filename(title, fallback="funny-baby-short"):
+    """Turn a title into a safe file name (keeps Urdu/English, drops emoji/symbols)."""
+    name = re.sub(r"#\w+", "", title)                 # drop hashtags
+    name = re.sub(r"[^\w \-]", "", name, flags=re.UNICODE).strip()
+    name = re.sub(r"\s+", " ", name)[:80].strip()
+    return name or fallback
 
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    p = argparse.ArgumentParser(description="Generate the 60s Urdu talking short.")
+    p = argparse.ArgumentParser(description="Generate the 60s Urdu funny toddler short.")
     p.add_argument("--root", default=here)
     p.add_argument("--only-segment", type=int, default=None,
                    help="Render just this segment id (1-8) for a cheap test.")
@@ -39,6 +52,12 @@ def main():
                    help="Skip the reference portrait (text-to-video only).")
     p.add_argument("--new-portrait", action="store_true",
                    help="Regenerate the reference portrait even if one exists.")
+    p.add_argument("--no-auto-title", action="store_true",
+                   help="Use the fallback title in config instead of generating one.")
+    p.add_argument("--upload", action="store_true",
+                   help="Upload the finished video to YouTube.")
+    p.add_argument("--privacy", choices=["private", "unlisted", "public"],
+                   default=tcfg.YT_PRIVACY, help="YouTube privacy (default: config).")
     p.add_argument("--dry-run", action="store_true",
                    help="Print prompts only; no API calls.")
     args = p.parse_args()
@@ -48,7 +67,7 @@ def main():
     os.makedirs(clips_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)
 
-    # --- Reference portrait: one realistic face used for every clip --------- #
+    # --- Optional reference portrait (off by default, for variety) ---------- #
     image_path = None
     if tcfg.USE_IMAGE_REFERENCE and not args.no_image and not args.dry_run:
         portrait = os.path.join(args.root, tcfg.PORTRAIT_FILE)
@@ -57,14 +76,10 @@ def main():
             print(f"Generating reference portrait ({tcfg.IMAGE_MODEL}) ...")
             try:
                 imagegen.generate_portrait(
-                    tcfg.CHARACTER_PORTRAIT_PROMPT, portrait, model=tcfg.IMAGE_MODEL
-                )
+                    tcfg.CHARACTER_PORTRAIT_PROMPT, portrait, model=tcfg.IMAGE_MODEL)
             except Exception as e:
-                print(f"  ! portrait generation failed ({e}); "
-                      f"continuing without a reference image.")
+                print(f"  ! portrait generation failed ({e}); continuing without it.")
                 portrait = None
-        else:
-            print(f"Using existing portrait: {portrait}")
         image_path = portrait if portrait and os.path.exists(portrait) else None
 
     segments = tcfg.SEGMENTS
@@ -74,12 +89,11 @@ def main():
             print(f"No segment with id {args.only_segment}")
             sys.exit(1)
 
-    clip_paths = []
     try:
+        # --- 1. Generate clips --------------------------------------------- #
         for seg in segments:
             sid = seg["id"]
             cpath = os.path.join(clips_dir, f"seg_{sid}.mp4")
-            clip_paths.append(cpath)
             prompt = tcfg.segment_prompt(seg)
 
             if args.dry_run:
@@ -95,10 +109,26 @@ def main():
             print("\n[DRY RUN] No API calls made.")
             return
         if args.only_segment:
-            print(f"\nDone. Clip: {clip_paths[0]} — check it, then run `python talk.py`.")
+            print(f"\nDone. Clip: talking_clips/seg_{args.only_segment}.mp4 — "
+                  f"check it, then run `python talk.py`.")
             return
 
-        # Need all 8 clips present to assemble the full video.
+        # --- 2. Title / metadata ------------------------------------------- #
+        title = tcfg.VIDEO_TITLE
+        description = tcfg.VIDEO_DESCRIPTION
+        tags = tcfg.VIDEO_TAGS
+        if tcfg.AUTO_TITLE and not args.no_auto_title:
+            print("Generating a title from the video's content ...")
+            try:
+                meta = titlegen.generate_metadata(tcfg.SEGMENTS, model=tcfg.TEXT_MODEL)
+                title = meta["title"]
+                description = meta["description"] or description
+                tags = meta["tags"] or tags
+                print(f"  ✓ title: {title}")
+            except Exception as e:
+                print(f"  ! title generation failed ({e}); using the default title.")
+
+        # --- 3. Assemble --------------------------------------------------- #
         all_paths = [os.path.join(clips_dir, f"seg_{s['id']}.mp4")
                      for s in tcfg.SEGMENTS]
         missing = [p for p in all_paths if not os.path.exists(p)]
@@ -114,12 +144,22 @@ def main():
                          if f.lower().endswith((".mp3", ".wav", ".m4a", ".aac"))]
                 music = cands[0] if cands else None
 
-        out_path = os.path.join(out_dir, "urdu_talk_final.mp4")
+        out_path = os.path.join(out_dir, safe_filename(title) + ".mp4")
         ffmerge.assemble_talking(
             all_paths, out_path, music_path=music,
-            max_seconds=tcfg.TARGET_SECONDS, music_gain=tcfg.TALKING_MUSIC_GAIN,
-        )
-        print(f"\nAll done. Output: {out_path}")
+            max_seconds=tcfg.TARGET_SECONDS, music_gain=tcfg.TALKING_MUSIC_GAIN)
+        print(f"\nVideo ready: {out_path}")
+
+        # --- 4. Upload ----------------------------------------------------- #
+        if args.upload:
+            from generator import youtube_upload
+            desc = description if "#Shorts" in description else description + " #Shorts"
+            youtube_upload.upload(
+                out_path, title, desc, tags, root=args.root,
+                privacy=args.privacy, category_id=tcfg.YT_CATEGORY)
+        else:
+            print("(Add --upload to publish this to YouTube.)")
+
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         sys.exit(1)

@@ -1,0 +1,15 @@
+# Secrets — never commit these
+.env
+client_secret.json
+youtube_token.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated media (large; regenerate from code)
+clips/
+talking_clips/
+vo/
+output/
+character/

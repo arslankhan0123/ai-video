@@ -26,6 +26,25 @@ TARGET_SECONDS = 60
 # Optional very-quiet music bed under the voice (linear gain).
 TALKING_MUSIC_GAIN = 0.05
 
+# --- Title / YouTube metadata --------------------------------------------- #
+# When True, the title/description/tags are auto-generated from the toddler's
+# lines (via a Gemini text model). The output .mp4 is named after the title.
+AUTO_TITLE = True
+TEXT_MODEL = os.getenv("TEXT_MODEL", "gemini-2.5-flash")
+
+# Fallbacks used if auto-generation is off or fails.
+VIDEO_TITLE = "Chhota Bacha, Bara Attitude 😂 | Funny Urdu Baby #Shorts"
+VIDEO_DESCRIPTION = (
+    "A tiny toddler with a very big attitude takes on the world — in Urdu. 😂 "
+    "#Shorts #funny #baby #urdu"
+)
+VIDEO_TAGS = ["funny baby", "urdu comedy", "cute baby", "shorts",
+              "funny shorts", "desi baby", "viral shorts", "comedy"]
+
+# YouTube upload defaults (used with `python talk.py --upload`).
+YT_PRIVACY = "private"   # "private" | "unlisted" | "public"
+YT_CATEGORY = "24"       # 24 = Entertainment
+
 # --- Image reference ------------------------------------------------------- #
 # OFF so each clip gets its own place/style (variety). Turn on only for a fixed
 # single-location talking head.
